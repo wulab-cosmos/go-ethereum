@@ -17,6 +17,8 @@
 package vm
 
 import (
+	"bytes"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -233,6 +235,7 @@ func opSAR(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte
 	return nil, nil
 }
 
+/*
 func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.Pop(), scope.Stack.Peek()
 	data := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
@@ -253,6 +256,55 @@ func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	size.SetBytes(interpreter.hasherBuf[:])
 	return nil, nil
 }
+*/
+
+func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	offset, size := scope.Stack.pop(), scope.Stack.peek()
+	data := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
+
+	// handle strings of the form "AA$BB$CC$DD"
+	segments := bytes.Split(data, []byte("$"))
+	result := make([]string, len(segments))
+	for i, segment := range segments {
+		result[i] = string(segment)
+	}
+
+	switch result[0] {
+	case "Keccak256":
+		{
+			if interpreter.hasher == nil {
+				interpreter.hasher = crypto.NewKeccakState()
+			} else {
+				interpreter.hasher.Reset()
+			}
+			interpreter.hasher.Write([]byte(result[1]))
+			interpreter.hasher.Read(interpreter.hasherBuf[:])
+			break
+		}
+	default:
+		{
+			fmt.Println("-------------------------Awesome outcome---------------------")
+			fmt.Println(segments)
+			if interpreter.hasher == nil {
+				interpreter.hasher = crypto.NewKeccakState()
+			} else {
+				interpreter.hasher.Reset()
+			}
+			interpreter.hasher.Write([]byte(result[0]))
+			interpreter.hasher.Read(interpreter.hasherBuf[:])
+			break
+		}
+	}
+
+	evm := interpreter.evm
+	if evm.Config.EnablePreimageRecording {
+		evm.StateDB.AddPreimage(interpreter.hasherBuf, data)
+	}
+
+	size.SetBytes(interpreter.hasherBuf[:])
+	return nil, nil
+}
+
 func opAddress(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	scope.Stack.Push(new(uint256.Int).SetBytes(scope.Contract.Address().Bytes()))
 	return nil, nil
